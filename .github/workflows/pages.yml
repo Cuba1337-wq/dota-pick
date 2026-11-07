@@ -1,0 +1,38 @@
+# Каждый день скачивает свежие данные OpenDota и выкладывает виджет на GitHub Pages.
+# Если загрузка не удалась — на сайте остаётся вчерашняя версия.
+name: Обновить Dota Pick
+
+on:
+  schedule:
+    - cron: "0 4 * * *"  # 07:00 по Москве (cron в UTC)
+  workflow_dispatch:      # кнопка «Run workflow» для ручного запуска
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python build_data.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
