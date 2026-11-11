@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python build_data.py
+      - run: python build_data.py --fallback  # не получилось скачать — публикуем с прошлыми данными
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

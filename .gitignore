@@ -1,7 +1,7 @@
 # Скачанные данные и служебное — собираются заново
 stats.json
 builds.json
-site/data.json
+
 *.tmp
 app.log
 __pycache__/
