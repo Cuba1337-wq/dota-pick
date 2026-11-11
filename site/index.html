@@ -2,180 +2,193 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Dota Pick</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0d13; --panel: #11151d; --panel2: #171c26; --panel3: #1e2431; --line: #232a37; --line2: #2e3646;
-    --text: #e9ecf2; --muted: #8790a2; --dim: #5b6375;
-    --good: #5ee08a; --bad: #ff6b6b; --gold: #e9b44c; --dire: #e05a4f; --radiant: #4fc77a;
-    --str: #e2554a; --agi: #4fcf6f; --int: #4aa3ff; --all: #d9a441;
+    --bg: #0d1016; --card: #151922; --card2: #1c212c; --line: #262c38;
+    --text: #e8ebf0; --muted: #8a92a3; --dim: #5d6576;
+    --good: #5bd98a; --bad: #ff6f6f; --gold: #e8b44d; --enemy: #e0605a; --ally: #55c47d;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); }
-  body { color: var(--text); font: 13px/1.45 Inter, -apple-system, "Segoe UI", system-ui, sans-serif; padding-bottom: 24px; }
-  button { font: inherit; color: inherit; }
+  body { color: var(--text); font: 13px/1.45 Inter, -apple-system, "Segoe UI", system-ui, sans-serif; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  [hidden] { display: none !important; }
 
-  .top { position: sticky; top: 0; z-index: 10; background: linear-gradient(180deg, var(--bg) 85%, #0a0d1300); padding: 10px 14px 8px; }
-  .bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .logo { font-weight: 700; letter-spacing: 2px; font-size: 13px; }
-  .logo b { color: var(--gold); }
-  #status { margin-left: auto; color: var(--dim); font-size: 10.5px; text-align: right; }
+  .top { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: 10px 14px 8px; border-bottom: 1px solid var(--line); }
+  .bar { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .logo { font-weight: 700; letter-spacing: 1.5px; font-size: 13px; } .logo b { color: var(--gold); }
+  #status { margin-left: auto; color: var(--dim); font-size: 11px; text-align: right; }
   #status.err { color: var(--bad); }
 
-  .team { display: grid; grid-template-columns: 22px repeat(5, 1fr); gap: 5px; align-items: center; margin-bottom: 5px; }
-  .team > i { width: 22px; height: 100%; border-radius: 5px; display: flex; align-items: center; justify-content: center;
-              font-style: normal; font-size: 9px; font-weight: 700; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 1px; }
-  .enemy > i { background: #e05a4f22; color: var(--dire); } .ally > i { background: #4fc77a22; color: var(--radiant); }
-  .slot { aspect-ratio: 16 / 10; border-radius: 8px; border: 1px dashed var(--line2); background: var(--panel2); position: relative;
-          overflow: hidden; padding: 0; color: var(--dim); font-size: 16px; }
+  .team { margin-bottom: 6px; }
+  .team-name { font-size: 11px; font-weight: 600; margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
+  .enemy .team-name { color: var(--enemy); } .ally .team-name { color: var(--ally); }
+  .team-name button { margin-left: auto; background: none; border: 0; color: var(--dim); font-size: 11px; padding: 0; }
+  .slots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+  .slot { position: relative; aspect-ratio: 16 / 10; border-radius: 8px; border: 1px dashed var(--line); background: var(--card);
+          overflow: hidden; padding: 0; display: flex; align-items: center; justify-content: center; }
   .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .slot .me { position: absolute; left: 3px; top: 3px; font-size: 8px; font-weight: 700; background: var(--gold); color: #1a1205; padding: 0 4px; border-radius: 3px; }
-  .slot .me.empty { position: static; background: none; color: var(--gold); font-size: 11px; }
-  .slot.filled { border: 1px solid transparent; }
-  .enemy .slot.filled { box-shadow: inset 0 0 0 1px #e05a4f99; } .ally .slot.filled { box-shadow: inset 0 0 0 1px #4fc77a99; }
-  .slot.active { border: 1px solid var(--gold); box-shadow: 0 0 0 2px #e9b44c44; }
+  .slot .role { position: relative; font-size: 10px; color: var(--dim); line-height: 1.15; text-align: center; padding: 0 2px; }
+  .slot.filled .role { position: absolute; left: 0; right: 0; bottom: 0; color: #fff; background: linear-gradient(transparent, #000c); padding: 8px 2px 2px; font-size: 9px; }
+  .slot.filled { border: 1px solid var(--line); }
+  .enemy .slot.filled { border-color: #e0605a88; } .ally .slot.filled { border-color: #55c47d88; }
+  .slot.me { border: 1px solid var(--gold) !important; }
+  .slot .me-tag { position: absolute; top: 3px; left: 3px; z-index: 1; font-size: 9px; font-weight: 700; background: var(--gold); color: #1b1407; border-radius: 3px; padding: 0 4px; }
+  .slot.active { box-shadow: 0 0 0 2px var(--gold); }
+  .mepick { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; color: var(--muted); }
+  .seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 9px; padding: 2px; gap: 2px; }
+  .seg button { flex: 1; background: none; border: 0; padding: 5px 4px; border-radius: 7px; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+  .seg button.on { background: var(--card2); color: var(--text); }
+  .mepick .seg { flex: 1; }
+  .tabs { margin-top: 8px; } .tabs button { padding: 7px 4px; font-weight: 600; font-size: 12.5px; }
+  .tabs b { color: var(--gold); }
 
-  .tabs { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 3px; margin-top: 8px; }
-  .tabs button { flex: 1; background: none; border: 0; padding: 8px 4px; border-radius: 8px; color: var(--muted); font-weight: 600; font-size: 12.5px; }
-  .tabs button.on { background: var(--panel3); color: var(--text); box-shadow: inset 0 0 0 1px var(--line2); }
-  .tabs b { color: var(--gold); font-weight: 700; }
-
-  .page { padding: 4px 14px; }
-  .seg { display: flex; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; }
-  .seg button { flex: 1; background: none; border: 0; padding: 6px 4px; border-radius: 7px; color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .seg button.on { background: var(--panel3); color: var(--text); box-shadow: inset 0 0 0 1px var(--line2); }
-  .seg.to button.on[data-v="enemies"] { color: var(--dire); } .seg.to button.on[data-v="allies"] { color: var(--radiant); }
-  .row { display: flex; gap: 8px; margin-bottom: 8px; }
-  .row .seg:first-child { flex: 0 0 auto; }
-  .label { font-size: 10.5px; font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase; color: var(--muted); margin: 12px 0 8px; }
-  #q { width: 100%; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 9px 12px;
-       font: inherit; font-size: 16px; outline: none; margin-bottom: 4px; }
+  main { padding: 10px 14px 30px; }
+  .search { position: relative; display: flex; gap: 6px; margin-bottom: 8px; }
+  #q { flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--line); color: var(--text); border-radius: 9px; padding: 9px 12px;
+       font: inherit; font-size: 16px; outline: none; }
   #q:focus { border-color: var(--gold); }
+  .search .seg { flex: 0 0 auto; }
+  .search .seg button.on[data-v="enemies"] { color: var(--enemy); } .search .seg button.on[data-v="allies"] { color: var(--ally); }
+  #suggest { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 5; background: var(--card2); border: 1px solid var(--line);
+             border-radius: 10px; padding: 4px; box-shadow: 0 12px 30px #000a; }
+  .sug { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 6px; border-radius: 7px; text-align: left; }
+  .sug:hover, .sug.first { background: var(--card); }
+  .sug img { width: 48px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; }
+  .sug small { color: var(--dim); margin-left: auto; font-size: 11px; }
 
-  .group h3 { display: flex; align-items: center; gap: 6px; margin: 12px 0 7px; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
-  .group h3 img { width: 16px; height: 16px; }
-  .group.str h3 { color: var(--str); } .group.agi h3 { color: var(--agi); } .group.int h3 { color: var(--int); } .group.all h3 { color: var(--all); }
-  .heroes { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 4px; }
-  .hero { padding: 0; border: 0; background: var(--panel2); border-radius: 5px; aspect-ratio: 16 / 9; overflow: hidden; transition: opacity .15s, filter .15s; }
+  .group h3 { margin: 12px 0 6px; font-size: 11px; font-weight: 600; color: var(--muted); }
+  .group h3 i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+  .heroes { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 3px; }
+  .hero { padding: 0; border: 0; background: var(--card); border-radius: 4px; aspect-ratio: 16 / 9; overflow: hidden; }
   .hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .hero.off { opacity: .12; filter: grayscale(1); }
-  .hero.taken { opacity: .3; filter: grayscale(1); }
-  .hero.taken.e { box-shadow: 0 0 0 1px var(--dire); } .hero.taken.a { box-shadow: 0 0 0 1px var(--radiant); }
-  .hero.first { box-shadow: 0 0 0 2px var(--gold); }
-  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #000e; color: #fff; padding: 7px 14px;
+  .hero.taken { opacity: .25; filter: grayscale(1); }
+  .toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #000e; color: #fff; padding: 7px 14px;
            border-radius: 999px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; white-space: nowrap; }
   .toast.show { opacity: 1; }
 
+  .h { font-size: 12px; font-weight: 600; color: var(--muted); margin: 14px 0 8px; }
+  .h:first-child { margin-top: 0; }
   .empty { color: var(--muted); text-align: center; padding: 40px 10px; }
   .empty b { display: block; color: var(--text); font-size: 15px; margin-bottom: 6px; }
-  .pos { flex-wrap: wrap; }
-  .pos button { flex: 1 0 30%; }
-  .pick { display: grid; grid-template-columns: 16px 56px 1fr auto; gap: 9px; align-items: center; padding: 8px; border-radius: 11px; border: 1px solid transparent; }
-  .pick.sel { background: var(--panel2); border-color: var(--line2); }
-  .pick .n { color: var(--dim); font-size: 10.5px; text-align: center; }
+  .pick { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; align-items: center; padding: 7px; border-radius: 10px; border: 1px solid transparent; }
+  .pick:hover { background: var(--card); }
+  .pick.sel { background: var(--card); border-color: var(--line); }
   .pick > img { width: 56px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 5px; }
   .pick .name { font-weight: 600; }
-  .score { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+  .score { font-weight: 700; font-variant-numeric: tabular-nums; }
   .pos-v { color: var(--good); } .neg-v { color: var(--bad); }
   .chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
-  .chip { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; background: var(--panel3); border-radius: 4px; padding: 1px 5px 1px 1px; font-variant-numeric: tabular-nums; }
-  .chip img { width: 22px; height: 13px; object-fit: cover; border-radius: 3px; }
-  .chip.syn { box-shadow: inset 0 0 0 1px #4fc77a88; }
+  .chip { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; background: var(--card2); border-radius: 4px; padding: 1px 5px 1px 1px; font-variant-numeric: tabular-nums; }
+  .chip img { width: 22px; height: 13px; object-fit: cover; border-radius: 2px; }
+  .chip.syn { box-shadow: inset 0 0 0 1px #55c47d88; }
 
-  .card { scroll-margin-top: 200px; margin-top: 12px; background: var(--panel2); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-  .hc-top { position: relative; padding: 14px; display: flex; align-items: center; gap: 12px; }
-  .hc-top .bg { position: absolute; inset: 0; background-size: cover; background-position: center 30%; opacity: .18; filter: blur(2px); }
-  .hc-top > *:not(.bg) { position: relative; }
-  .hc-top img { width: 84px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 7px; }
-  .hc-top .name { font-size: 15px; font-weight: 700; }
-  .hc-top .meta { color: var(--muted); font-size: 11px; }
-  .take { margin-left: auto; background: var(--gold); color: #1a1205; border: 0; border-radius: 9px; padding: 8px 12px; font-weight: 700; font-size: 12px; }
-  .hc-body { padding: 0 14px 14px; }
-  .bpos { display: flex; gap: 4px; }
-  .bpos button { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 2px; color: var(--muted); font-size: 11px; line-height: 1.2; }
-  .bpos button small { display: block; font-size: 9px; color: var(--dim); }
-  .bpos button.on { border-color: var(--gold); color: var(--text); background: #e9b44c14; }
-  .bpos button.few { opacity: .45; }
-  .note { color: var(--dim); font-size: 10.5px; margin: 6px 0 0; }
-  .phase .t { font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin: 12px 0 6px; }
-  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); gap: 6px; }
-  .item img { width: 100%; aspect-ratio: 88 / 64; object-fit: cover; border-radius: 6px; display: block; background: var(--panel3); }
-  .item span { display: block; font-size: 9px; color: var(--muted); line-height: 1.15; margin-top: 3px; text-align: center; }
-  .counter { display: flex; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); }
+  .card { scroll-margin-top: 230px; margin-top: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .card-top { display: flex; align-items: center; gap: 12px; }
+  .card-top img { width: 80px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; }
+  .card-top .name { font-size: 15px; font-weight: 700; }
+  .card-top .meta { color: var(--muted); font-size: 11px; }
+  .take { margin-left: auto; background: var(--gold); color: #1b1407; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 700; font-size: 12px; }
+  .tips { margin: 12px 0 0; padding: 10px 12px; background: var(--card2); border-radius: 9px; list-style: none; }
+  .tips li { padding: 3px 0 3px 16px; position: relative; } .tips li::before { content: "•"; position: absolute; left: 3px; color: var(--gold); }
+  .bpos { margin-top: 12px; } .bpos button small { color: var(--dim); font-size: 9.5px; margin-left: 3px; } .bpos button.few { opacity: .4; }
+  .note { color: var(--dim); font-size: 11px; margin-top: 6px; }
+  .start { display: flex; flex-wrap: wrap; gap: 5px; }
+  .start img { width: 46px; height: 34px; object-fit: cover; border-radius: 5px; background: var(--card2); }
+  .order { list-style: none; padding: 0; margin: 0; counter-reset: n; }
+  .order li { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); counter-increment: n; }
+  .order li:first-child { border-top: 0; }
+  .order li::before { content: counter(n); width: 16px; color: var(--dim); font-size: 11px; text-align: right; }
+  .order img, .counter img { width: 46px; height: 34px; object-fit: cover; border-radius: 5px; background: var(--card2); }
+  .order .min { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .order .pct { color: var(--dim); font-size: 10.5px; width: 34px; text-align: right; }
+  .counter { display: flex; gap: 10px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); }
   .counter:first-of-type { border-top: 0; }
-  .counter img { width: 40px; height: 29px; object-fit: cover; border-radius: 5px; }
-  .counter .why { color: var(--muted); font-size: 10.5px; }
-  .counter .cnt { margin-left: auto; font-size: 10px; color: var(--gold); background: #e9b44c18; padding: 1px 7px; border-radius: 999px; }
-  .clear { background: none; border: 0; color: var(--dim); font-size: 11px; padding: 0; }
+  .counter .why { color: var(--muted); font-size: 11px; }
+
+  /* широкий экран (программа на ПК): две колонки, вкладки не нужны */
+  @media (min-width: 900px) {
+    body { height: 100vh; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: auto 1fr; }
+    .top { grid-column: 1 / -1; padding: 12px 20px; }
+    .draft { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .tabs { display: none; }
+    main { overflow-y: auto; padding: 14px 20px; }
+    #heroesPage, #resultPage { display: block !important; }
+    #resultPage { border-left: 1px solid var(--line); }
+    .heroes { grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); }
+    .groups { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  }
 </style>
 </head>
 <body>
 <div class="top">
   <div class="bar"><div class="logo">DOTA <b>PICK</b></div><div id="status">Загружаю данные…</div></div>
-  <div class="team enemy"><i>ВРАГИ</i><div style="display:contents" id="enemies"></div></div>
-  <div class="team ally"><i>МЫ</i><div style="display:contents" id="allies"></div></div>
-  <div class="tabs" id="tabs"><button data-t="heroes" class="on">Герои</button><button data-t="result">Пик и сборка</button></div>
-</div>
-
-<div class="page" id="heroesPage">
-  <div class="row">
-    <div class="seg to" id="target"></div>
-    <div class="seg" id="roleFilter" style="flex:1"></div>
+  <div class="draft">
+    <div class="team enemy"><div class="team-name">Враги</div><div class="slots" id="enemies"></div></div>
+    <div class="team ally"><div class="team-name">Мы<button id="clear">Очистить всё</button></div><div class="slots" id="allies"></div>
+      <div class="mepick">Я играю:<div class="seg" id="me"></div></div></div>
   </div>
-  <input id="q" placeholder="Поиск: пудж, войд, ам…" autocomplete="off" enterkeyhint="done" aria-label="Поиск героя">
-  <div id="groups"></div>
-  <div style="text-align:center;margin-top:16px"><button class="clear" id="clear">Очистить драфт</button></div>
+  <div class="seg tabs" id="tabs"><button data-t="heroes" class="on">Герои</button><button data-t="result">Пик и сборка</button></div>
 </div>
 
-<div class="page" id="resultPage" hidden>
-  <div class="label">Моя позиция</div>
-  <div class="seg pos" id="pos"></div>
-  <div id="result"></div>
-</div>
+<main id="heroesPage">
+  <div class="search">
+    <input id="q" placeholder="Начни писать: баб, пудж, ам…" autocomplete="off" enterkeyhint="done" aria-label="Поиск героя">
+    <div class="seg" id="target"></div>
+    <div id="suggest" hidden></div>
+  </div>
+  <div class="groups" id="groups"></div>
+</main>
+<main id="resultPage" hidden><div id="result"></div></main>
 <div class="toast" id="toast"></div>
 
 <script>
-const tg = window.Telegram && Telegram.WebApp;
-if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor("#0a0d13"); tg.setBackgroundColor("#0a0d13"); } catch (e) {} }
+const tg = window.Telegram && Telegram.WebApp && Telegram.WebApp.initData !== undefined ? Telegram.WebApp : null;
+if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor("#0d1016"); tg.setBackgroundColor("#0d1016"); } catch (e) {} }
 const haptic = () => { try { tg && tg.HapticFeedback.selectionChanged(); } catch (e) {} };
+const LOCAL = location.hostname === "127.0.0.1";  // программа на ПК (а не сайт для Телеграма)
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const norm = s => s.toLowerCase().replace(/ё/g, "е").replace(/-/g, " ").replace(/[^\p{L}\p{N} ]/gu, "").replace(/\s+/g, " ").trim();
 const pct = x => (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "%";
 const cls = x => x >= 0 ? "pos-v" : "neg-v";
-const ICON = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/icons/hero_";
-const ATTRS = [["str", "Сила", "strength"], ["agi", "Ловкость", "agility"], ["int", "Интеллект", "intelligence"], ["all", "Универсальные", "universal"]];
-const POS = [[0, "Любая"], [1, "1 Керри"], [2, "2 Мид"], [3, "3 Офлейн"], [4, "4 Семи"], [5, "5 Фулл"]];
-const ROLE = [[0, "Все"], [1, "1"], [2, "2"], [3, "3"], [4, "4"], [5, "5"]];
-const TARGET = [["enemies", "Во врагов"], ["allies", "В наших"]];
+const ROLES = ["Керри", "Мид", "Хардлайн", "Поддержка", "Полная поддержка"];
+const SHORT = ["Керри", "Мид", "Хард", "Поддержка", "Фулл"];
+const ATTRS = [["str", "Сила", "#e2554a"], ["agi", "Ловкость", "#4fcf6f"], ["int", "Интеллект", "#4aa3ff"], ["all", "Универсальные", "#d9a441"]];
 
 let D = null, HEROES = [], BY = {};
-const draft = {enemies: [0, 0, 0, 0, 0], allies: [0, 0, 0, 0, 0]};  // allies[0] — это я
-let active = null, target = "enemies", pos = 0, role = 0, selected = 0, picks = [], buildPos = 0, tab = "heroes";
-try { pos = +localStorage.getItem("pos") || 0; } catch (e) {}
+const draft = {enemies: [0, 0, 0, 0, 0], allies: [0, 0, 0, 0, 0]};  // индекс слота = позиция − 1
+let me = 0, active = null, target = "enemies", selected = 0, buildPos = 0, tab = "heroes";
+try { me = +localStorage.getItem("me") || 0; } catch (e) {}
 
-// ---------- расчёт (тот же, что в app.py) ----------
+// ---------- расчёт ----------
 const PRIOR = 100;
 const rate = (g, w, exp) => (w + PRIOR * exp) / (g + PRIOR);
 const clamp = x => Math.min(Math.max(x, 0.01), 0.99);
 const baseWr = h => rate(D.stats.hg[h], D.stats.hw[h], 0.5);
-function advantage(a, b) { const exp = clamp(baseWr(a) - baseWr(b) + 0.5); return rate(D.stats.vg[a][b], D.stats.vw[a][b], exp) - exp; }
-function synergy(a, b) { const exp = clamp(baseWr(a) + baseWr(b) - 0.5); return rate(D.stats.sg[a][b], D.stats.sw[a][b], exp) - exp; }
+const advantage = (a, b) => { const exp = clamp(baseWr(a) - baseWr(b) + 0.5); return rate(D.stats.vg[a][b], D.stats.vw[a][b], exp) - exp; };
+const synergy = (a, b) => { const exp = clamp(baseWr(a) + baseWr(b) - 0.5); return rate(D.stats.sg[a][b], D.stats.sw[a][b], exp) - exp; };
 function evaluate(h, enemies, allies) {
   const vs = enemies.map(e => ({id: e, adv: advantage(h, e), games: D.stats.vg[h][e]}));
   const syn = allies.map(a => ({id: a, adv: synergy(h, a), games: D.stats.sg[h][a]}));
   const sum = xs => xs.reduce((s, x) => s + x.adv, 0);
-  return {id: h, score: sum(vs) + 0.5 * sum(syn) + 0.5 * (baseWr(h) - 0.5), wr: baseWr(h), games: D.stats.hg[h], vs, syn};
+  return {id: h, score: sum(vs) + 0.5 * sum(syn) + 0.5 * (baseWr(h) - 0.5), wr: baseWr(h), vs, syn};
+}
+// позиции героя от самой частой к редкой (по про-матчам), иначе — по справочнику
+function positions(h) {
+  const g = [1, 2, 3, 4, 5].map(p => [p, D.games[`${h}-${p}`] || 0]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  return g.length ? g : BY[h].pos;
 }
 function suggest(enemies, allies, p) {
   const taken = new Set([...enemies, ...allies]);
   return HEROES.filter(h => !taken.has(h.id) && (!p || h.pos.includes(p)) && D.stats.hg[h.id] >= 100)
-    .map(h => evaluate(h.id, enemies, allies)).sort((a, b) => b.score - a.score).slice(0, 10);
+    .map(h => evaluate(h.id, enemies, allies)).sort((a, b) => b.score - a.score).slice(0, 8);
 }
 function teamItems(enemies, support) {
   const why = new Map(), add = (item, w) => { if (!why.has(item)) why.set(item, []); why.get(item).push(w); };
@@ -185,166 +198,209 @@ function teamItems(enemies, support) {
     const n = enemies.filter(e => BY[e].roles.includes(role)).length;
     if (n >= 4) for (const item of support ? sup : core) add(item, `${label} (${n} из ${enemies.length})`);
   }
-  return [...why].filter(([item]) => !(support && D.core_only.includes(item))).sort((a, b) => b[1].length - a[1].length).slice(0, 7);
+  return [...why].filter(([item]) => !(support && D.core_only.includes(item))).sort((a, b) => b[1].length - a[1].length).slice(0, 6);
+}
+function tips(r, b, team) {
+  const out = [...(D.rules[BY[r.id].name] || [])];
+  const key = b.data && [...b.data.core].filter(x => x[1] >= 10).sort((x, y) => y[2] - x[2])[0];
+  if (key) out.push(`Главный предмет — ${key[0]}: берут ${key[2]}% игроков, обычно к ~${key[1]} мин. Не успеваешь к ~${key[1] + 5} мин — фарми, а не дерись.`);
+  if (r.vs.length) {
+    const worst = [...r.vs].sort((x, y) => x.adv - y.adv)[0], best = [...r.vs].sort((x, y) => y.adv - x.adv)[0];
+    const counter = (D.counters[BY[worst.id].name] || [])[0];
+    if (worst.adv < -0.01) out.push(`Тяжелее всего против ${BY[worst.id].name} (${pct(worst.adv)})` + (counter ? ` — помогает ${counter}.` : "."));
+    if (best.adv > 0.01) out.push(`Легче всего против ${BY[best.id].name} (${pct(best.adv)}) — его можно давить.`);
+  }
+  if (team.length && team[0][1].length > 1) out.push(`Против их состава в первую очередь — ${team[0][0]}: закрывает ${team[0][1].join(", ")}.`);
+  if (r.wr >= 0.52) out.push(`Сильный герой в текущей мете: ${(r.wr * 100).toFixed(1)}% побед на Archon–Legend.`);
+  if (r.wr <= 0.47) out.push(`Слабый в текущей мете: ${(r.wr * 100).toFixed(1)}% побед — пикай, только если хорошо им играешь.`);
+  return out;
 }
 function build(hero, enemies, p) {
   const games = {}; for (let k = 1; k <= 5; k++) games[k] = D.games[`${hero}-${k}`] || 0;
-  const best = +Object.keys(games).reduce((a, b) => games[b] > games[a] ? b : a);
+  const best = positions(hero)[0];
   if (!p) p = best;
-  let shown = p, note;
-  if (D.builds[`${hero}-${p}`]) note = `Закупы на ${p} позиции · ${games[p]} про-матчей патча ${D.patch}`;
-  else if (D.builds[`${hero}-${best}`]) { shown = best; note = `На ${p} позиции героя почти не играют (${games[p]} игр) — показана сборка для ${best} позиции`; }
+  let shown = p, note = "";
+  if (D.builds[`${hero}-${p}`]) note = `${games[p]} про-матчей патча ${D.patch} на ${p} позиции`;
+  else if (D.builds[`${hero}-${best}`]) { shown = best; note = `На ${p} позиции героя почти не играют — показана сборка для ${best} позиции`; }
   else note = "Мало про-матчей на этом герое — сборки нет";
-  return {pos: p, games, note, phases: D.builds[`${hero}-${shown}`] || [], team: teamItems(enemies, p === 4 || p === 5)};
+  return {pos: p, games, note, data: D.builds[`${hero}-${shown}`], team: teamItems(enemies, p === 4 || p === 5)};
 }
 
 // ---------- драфт ----------
-function renderSlots() {
+function renderDraft() {
   for (const team of ["enemies", "allies"]) {
     $("#" + team).innerHTML = draft[team].map((id, i) => {
-      const h = BY[id], isMe = team === "allies" && i === 0, on = active && active.team === team && active.i === i ? " active" : "";
-      return `<button class="slot${h ? " filled" : ""}${on}" data-team="${team}" data-i="${i}" aria-label="${esc(h ? h.name : isMe ? "Я" : "Пустой слот")}">
-        ${h ? `<img src="${h.img}" alt="">` : isMe ? "" : "+"}${isMe ? `<span class="me${h ? "" : " empty"}">Я</span>` : ""}</button>`;
+      const h = BY[id], mine = team === "allies" && me === i + 1, on = active && active.team === team && active.i === i;
+      return `<button class="slot${h ? " filled" : ""}${mine ? " me" : ""}${on ? " active" : ""}" data-team="${team}" data-i="${i}"
+        title="${esc(h ? h.name + " — " + ROLES[i] : ROLES[i])}">${h ? `<img src="${h.img}" alt="">` : ""}
+        ${mine ? '<span class="me-tag">Я</span>' : ""}<span class="role">${SHORT[i]}</span></button>`;
     }).join("");
   }
+  $("#me").innerHTML = [[0, "—"], ...SHORT.map((t, i) => [i + 1, t])].map(([v, t]) =>
+    `<button class="${v === me ? "on" : ""}" data-v="${v}">${t}</button>`).join("");
   const n = draft.enemies.filter(Boolean).length;
   $("#tabs").children[1].innerHTML = "Пик и сборка" + (n ? ` <b>${n}</b>` : "");
   if (tg) {
-    if (n && tab === "heroes") { tg.MainButton.setParams({text: "Кого пикнуть →", color: "#e9b44c", text_color: "#1a1205"}); tg.MainButton.show(); }
+    if (n && tab === "heroes") { tg.MainButton.setParams({text: "Кого пикнуть →", color: "#e8b44d", text_color: "#1b1407"}); tg.MainButton.show(); }
     else tg.MainButton.hide();
   }
 }
+function refresh() { renderDraft(); renderGrid(); renderResult(); }
+
 document.addEventListener("click", e => {
   const s = e.target.closest(".slot"); if (!s) return;
   const team = s.dataset.team, i = +s.dataset.i;
   if (draft[team][i]) { toast(`Убран ${BY[draft[team][i]].name}`); draft[team][i] = 0; active = null; }
-  else active = active && active.team === team && active.i === i ? null : {team, i};
-  haptic(); renderSlots(); renderGrid(); renderResult();
+  else { active = active && active.team === team && active.i === i ? null : {team, i}; if (active) toast(`Выбери героя на «${ROLES[i]}»`); }
+  haptic(); refresh();
 });
+$("#me").onclick = e => { const b = e.target.closest("button"); if (!b) return;
+  me = +b.dataset.v; try { localStorage.setItem("me", me); } catch (e) {} buildPos = 0; haptic(); refresh(); };
+$("#clear").onclick = () => { draft.enemies.fill(0); draft.allies.fill(0); active = null; refresh(); };
 
 let toastT;
-function toast(text) { const t = $("#toast"); t.textContent = text; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 1300); }
+function toast(text) { const t = $("#toast"); t.textContent = text; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 1400); }
 
-function place(id) {
+function place(id, team) {
   if (!id) return;
-  if (draft.enemies.includes(id) || draft.allies.includes(id)) return toast(`${BY[id].name} уже в драфте`);
-  let team = target, i;
+  if (draft.enemies.includes(id) || draft.allies.includes(id)) return toast(`${BY[id].name} уже выбран`);
+  let i;
   if (active) { team = active.team; i = active.i; }
   else {
-    i = team === "allies" ? draft.allies.findIndex((v, k) => k > 0 && !v) : draft.enemies.indexOf(0);  // тиммейты — после «Я»
-    if (i < 0 && team === "allies" && !draft.allies[0]) i = 0;
+    team = team || target;
+    const free = p => !draft[team][p - 1] && !(team === "allies" && p === me);  // свой слот «Я» заполняется только явно
+    const p = positions(id).find(free) || [1, 2, 3, 4, 5].find(free);
+    if (!p) return toast(team === "enemies" ? "Все 5 врагов уже выбраны" : "Наша команда заполнена");
+    i = p - 1;
   }
-  if (i < 0) return toast(team === "enemies" ? "Все 5 врагов уже выбраны" : "Наша команда заполнена");
   draft[team][i] = id; active = null; haptic();
-  toast(`${BY[id].name} → ${team === "enemies" ? "враги" : i === 0 ? "это я" : "наши"}`);
-  $("#q").value = ""; renderSlots(); renderGrid(); renderResult();
+  toast(`${BY[id].name} → ${team === "enemies" ? "враги" : "мы"}, ${ROLES[i]}`);
+  $("#q").value = ""; renderSuggest(); refresh();
 }
 
-// ---------- сетка героев ----------
-const seg = (el, list, cur) => el.innerHTML = list.map(([v, t]) => `<button class="${v === cur ? "on" : ""}" data-v="${v}">${t}</button>`).join("");
+// ---------- поиск и сетка ----------
 function rank(h, q) { let b = 9; for (const a of h.aliases) b = Math.min(b, a === q ? 0 : a.startsWith(q) ? 1 : a.includes(q) ? 2 : 9); return b; }
-function bestMatch() {
-  const q = norm($("#q").value); if (!q) return null;
-  let best = null, br = 9;
-  for (const h of HEROES) { const r = rank(h, q); if (r < br && (!role || h.pos.includes(role))) { br = r; best = h; } }
-  return best;
+function matches() {
+  const q = norm($("#q").value); if (!q) return [];
+  return HEROES.map(h => [h, rank(h, q)]).filter(x => x[1] < 9).sort((a, b) => a[1] - b[1] || a[0].name.localeCompare(b[0].name)).slice(0, 6).map(x => x[0]);
+}
+function renderSuggest() {
+  const list = matches(), box = $("#suggest");
+  box.hidden = !$("#q").value.trim();
+  box.innerHTML = list.length ? list.map((h, k) => `<button class="sug${k === 0 ? " first" : ""}" data-id="${h.id}">
+    <img src="${h.img}" alt=""><span>${esc(h.name)}</span><small>${positions(h.id).slice(0, 2).map(p => SHORT[p - 1]).join(", ")}</small></button>`).join("")
+    : '<div class="sug" style="color:var(--dim)">Не нашёл такого героя</div>';
 }
 function renderGrid() {
-  const q = norm($("#q").value), first = bestMatch();
-  $("#groups").innerHTML = ATTRS.map(([a, title, icon]) => `<div class="group ${a}"><h3><img src="${ICON}${icon}.png" alt="">${title}</h3><div class="heroes">` +
-    HEROES.filter(h => h.attr === a).map(h => {
-      const e = draft.enemies.includes(h.id), al = draft.allies.includes(h.id);
-      const off = (q && rank(h, q) === 9) || (role && !h.pos.includes(role));
-      const c = (e || al ? " taken" + (e ? " e" : " a") : "") + (off ? " off" : "") + (first && first.id === h.id ? " first" : "");
-      return `<button class="hero${c}" data-id="${h.id}" aria-label="${esc(h.name)}"><img src="${h.img}" alt="" loading="lazy"></button>`;
-    }).join("") + "</div></div>").join("");
+  const taken = new Set([...draft.enemies, ...draft.allies]);
+  $("#groups").innerHTML = ATTRS.map(([a, title, color]) => `<div class="group"><h3><i style="background:${color}"></i>${title}</h3><div class="heroes">` +
+    HEROES.filter(h => h.attr === a).map(h => `<button class="hero${taken.has(h.id) ? " taken" : ""}" data-id="${h.id}" title="${esc(h.name)}" aria-label="${esc(h.name)}">
+      <img src="${h.img}" alt="" loading="lazy"></button>`).join("") + "</div></div>").join("");
 }
+$("#q").oninput = renderSuggest;
+$("#q").onkeydown = e => {
+  if (e.key === "Enter") { const m = matches()[0]; if (m) place(m.id, e.shiftKey ? "allies" : null); else $("#q").blur(); }
+  if (e.key === "Escape") { $("#q").value = ""; renderSuggest(); }
+};
+$("#suggest").onclick = e => { const b = e.target.closest(".sug[data-id]"); if (b) place(+b.dataset.id); };
 $("#groups").onclick = e => { const b = e.target.closest(".hero"); if (b) place(+b.dataset.id); };
-$("#q").oninput = renderGrid;
-$("#q").onkeydown = e => { if (e.key === "Enter") { const m = bestMatch(); if (m) place(m.id); $("#q").blur(); } };
-$("#target").onclick = e => { const b = e.target.closest("button"); if (!b) return; target = b.dataset.v; active = null; seg($("#target"), TARGET, target); renderSlots(); };
-$("#roleFilter").onclick = e => { const b = e.target.closest("button"); if (!b) return; role = +b.dataset.v; seg($("#roleFilter"), ROLE, role); renderGrid(); };
-$("#clear").onclick = () => { draft.enemies.fill(0); draft.allies.fill(0); active = null; renderSlots(); renderGrid(); renderResult(); };
+$("#groups").oncontextmenu = e => { const b = e.target.closest(".hero"); if (b) { e.preventDefault(); place(+b.dataset.id, "allies"); } };
+document.addEventListener("click", e => { if (!e.target.closest(".search")) $("#suggest").hidden = true; });
+$("#target").onclick = e => { const b = e.target.closest("button"); if (!b) return; target = b.dataset.v; active = null; renderTarget(); };
+const renderTarget = () => $("#target").innerHTML = [["enemies", "Враги"], ["allies", "Мы"]].map(([v, t]) =>
+  `<button class="${v === target ? "on" : ""}" data-v="${v}">${t}</button>`).join("");
+if (!matchMedia("(pointer: coarse)").matches) document.addEventListener("keydown", e => {  // ПК: начал печатать — сразу в поиск
+  if (e.key.length === 1 && !e.ctrlKey && !e.altKey && document.activeElement !== $("#q")) $("#q").focus();
+});
 
-// ---------- вкладки ----------
+// ---------- вкладки (телефон) ----------
 function setTab(t) {
   tab = t;
   for (const b of $("#tabs").children) b.classList.toggle("on", b.dataset.t === t);
   $("#heroesPage").hidden = t !== "heroes"; $("#resultPage").hidden = t !== "result";
-  renderSlots(); window.scrollTo(0, 0);
-  if (t === "result") renderResult();
+  renderDraft(); renderResult(); window.scrollTo(0, 0);
 }
 $("#tabs").onclick = e => { const b = e.target.closest("button"); if (b) setTab(b.dataset.t); };
 if (tg) tg.MainButton.onClick(() => setTab("result"));
-$("#pos").onclick = e => { const b = e.target.closest("button"); if (!b) return;
-  pos = +b.dataset.v; try { localStorage.setItem("pos", pos); } catch (e) {} seg($("#pos"), POS, pos); buildPos = 0; renderResult(); };
 
-// ---------- результаты ----------
-const chip = (x, syn) => `<span class="chip${syn ? " syn" : ""}"><img src="${BY[x.id].img}" alt="${esc(BY[x.id].name)}"><span class="${cls(x.adv)}">${pct(x.adv)}</span></span>`;
+// ---------- результат ----------
+const img = n => D.items[n] || "";
+const chip = (x, syn) => `<span class="chip${syn ? " syn" : ""}" title="${esc(BY[x.id].name)}"><img src="${BY[x.id].img}" alt=""><span class="${cls(x.adv)}">${pct(x.adv)}</span></span>`;
 const chipsHtml = r => r.vs.map(x => chip(x)).join("") + r.syn.map(x => chip(x, true)).join("");
-const itemImg = n => D.items[n] || "";
 
-function buildHtml(b) {
-  let html = `<div class="bpos">${[1, 2, 3, 4, 5].map(p => `<button class="${p === b.pos ? "on" : ""}${b.games[p] < D.min_games ? " few" : ""}" data-bpos="${p}">
-    ${p} поз.<small>${b.games[p]} игр</small></button>`).join("")}</div><div class="note">${esc(b.note)}</div>` +
-    b.phases.map(([t, names]) => `<div class="phase"><div class="t">${esc(t)}</div><div class="items">` +
-      names.map(n => `<div class="item"><img src="${itemImg(n)}" alt=""><span>${esc(n)}</span></div>`).join("") + "</div></div>").join("");
-  if (b.team.length) html += `<div class="label" style="margin-top:16px">Против этой команды</div>` + b.team.map(([n, why]) =>
-    `<div class="counter"><img src="${itemImg(n)}" alt=""><div><div>${esc(n)}</div><div class="why">${esc(why.join(", "))}</div></div>
-     ${why.length > 1 ? `<span class="cnt">×${why.length}</span>` : ""}</div>`).join("");
-  return html;
-}
-function heroCard(r, take) {
-  const h = BY[r.id], b = build(r.id, draft.enemies.filter(Boolean), buildPos || pos);
-  return `<div class="card"><div class="hc-top"><div class="bg" style="background-image:url('${h.img}')"></div><img src="${h.img}" alt="">
-    <div><div class="name">${esc(h.name)}</div><div class="meta">винрейт ${(r.wr * 100).toFixed(1)}% · Archon–Legend</div></div>
-    ${take ? `<button class="take" data-take="${r.id}">Беру</button>` : ""}</div>
-    <div class="hc-body">${r.vs.length || r.syn.length ? `<div class="chips" style="margin-bottom:12px">${chipsHtml(r)}</div>` : ""}
-    <div class="label" style="margin-top:0">Сборка</div>${buildHtml(b)}</div></div>`;
+function card(r, take) {
+  const h = BY[r.id], b = build(r.id, draft.enemies.filter(Boolean), buildPos || me), d = b.data;
+  const t = tips(r, b, b.team);
+  return `<div class="card"><div class="card-top"><img src="${h.img}" alt=""><div><div class="name">${esc(h.name)}</div>
+      <div class="meta">${r.vs.length ? `против их команды <span class="${cls(r.score)}">${pct(r.score)}</span> · ` : ""}${(r.wr * 100).toFixed(1)}% побед</div></div>
+      ${take ? `<button class="take" data-take="${r.id}">Беру</button>` : ""}</div>
+    ${r.vs.length || r.syn.length ? `<div class="chips" style="margin-top:10px">${chipsHtml(r)}</div>` : ""}
+    ${t.length ? `<ul class="tips">${t.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    <div class="seg bpos">${[1, 2, 3, 4, 5].map(p => `<button class="${p === b.pos ? "on" : ""}${b.games[p] < D.min_games ? " few" : ""}" data-bpos="${p}">${SHORT[p - 1]}<small>${b.games[p]}</small></button>`).join("")}</div>
+    <div class="note">${esc(b.note)}</div>
+    ${d ? `<div class="h">Старт</div><div class="start">${d.start.map(n => `<img src="${img(n)}" alt="${esc(n)}" title="${esc(n)}">`).join("")}</div>
+      <div class="h">Порядок закупа</div><ol class="order">${d.core.map(([n, m, p]) =>
+        `<li><img src="${img(n)}" alt=""><span>${esc(n)}</span><span class="min">~${m} мин</span><span class="pct">${p}%</span></li>`).join("")}</ol>
+      ${d.extra.length ? `<div class="h">По ситуации</div><ol class="order" style="counter-reset:none">${d.extra.map(([n, m, p]) =>
+        `<li style="counter-increment:none"><img src="${img(n)}" alt=""><span>${esc(n)}</span><span class="min">~${m} мин</span><span class="pct">${p}%</span></li>`).join("")}</ol>` : ""}` : ""}
+    ${b.team.length ? `<div class="h">Против их команды</div>${b.team.map(([n, why]) =>
+      `<div class="counter"><img src="${img(n)}" alt=""><div><div>${esc(n)}</div><div class="why">${esc(why.join(", "))}</div></div></div>`).join("")}` : ""}
+  </div>`;
 }
 function renderResult() {
-  if (!D || tab !== "result") return;
-  const enemies = draft.enemies.filter(Boolean), me = draft.allies[0], allies = draft.allies.slice(1).filter(Boolean);
-  if (!enemies.length && !me) {
-    $("#result").innerHTML = `<div class="empty"><b>Добавь вражеских героев</b>На вкладке «Герои». Покажу, кого пикнуть против всей их команды и что собрать</div>`;
+  if (!D || (tab !== "result" && !matchMedia("(min-width: 900px)").matches)) return;
+  const enemies = draft.enemies.filter(Boolean), mine = me && draft.allies[me - 1];
+  const allies = draft.allies.filter((id, i) => id && i !== me - 1);
+  if (mine) {
+    $("#result").innerHTML = `<div class="h">Твой герой</div>` + card(evaluate(mine, enemies, allies), false);
     return;
   }
-  if (me) {
-    const r = evaluate(me, enemies, allies);
-    $("#result").innerHTML = `<div class="label">Твой герой против их команды · <span class="${cls(r.score)}">${pct(r.score)}</span></div>` + heroCard(r, false);
+  if (!enemies.length) {
+    $("#result").innerHTML = `<div class="empty"><b>Добавь врагов</b>Начни писать имя героя в поиске или выбери в списке.<br>
+      Выбери «Я играю» — покажу пик и сборку под твою позицию.</div>`;
     return;
   }
-  picks = suggest(enemies, allies, pos);
+  const picks = suggest(enemies, allies, me);
   if (!picks.some(p => p.id === selected)) { selected = picks.length ? picks[0].id : 0; buildPos = 0; }
-  const sel = picks.find(p => p.id === selected);
-  $("#result").innerHTML = `<div class="label">Кого пикнуть${pos ? " · " + POS[pos][1] : ""}</div>` + (picks.length ? picks.map((r, k) =>
-    `<div class="pick${r.id === selected ? " sel" : ""}" data-id="${r.id}"><span class="n">${k + 1}</span><img src="${BY[r.id].img}" alt="">
+  $("#result").innerHTML = `<div class="h">Кого пикнуть${me ? " на " + ROLES[me - 1].toLowerCase() : ""}</div>` + (picks.length ? picks.map(r =>
+    `<div class="pick${r.id === selected ? " sel" : ""}" data-id="${r.id}"><img src="${BY[r.id].img}" alt="">
       <div><div class="name">${esc(BY[r.id].name)}</div><div class="chips">${chipsHtml(r)}</div></div>
-      <div class="score ${cls(r.score)}">${pct(r.score)}</div></div>`).join("") : '<div class="empty">Нет вариантов на эту позицию</div>') +
-    (sel ? heroCard(sel, true) : "");
+      <div class="score ${cls(r.score)}">${pct(r.score)}</div></div>`).join("") : '<div class="empty">Нет вариантов</div>') +
+    (picks.length ? card(picks.find(p => p.id === selected), true) : "");
 }
 $("#result").onclick = e => {
   const t = e.target.closest("[data-take]");
-  if (t) { const id = +t.dataset.take, i = draft.allies.indexOf(id); if (i > 0) draft.allies[i] = 0;
-           draft.allies[0] = id; buildPos = 0; haptic(); renderSlots(); renderGrid(); return renderResult(); }
+  if (t) {
+    const id = +t.dataset.take;
+    if (!me) { me = positions(id)[0]; try { localStorage.setItem("me", me); } catch (e) {} }
+    const i = draft.allies.indexOf(id); if (i >= 0) draft.allies[i] = 0;
+    draft.allies[me - 1] = id; buildPos = 0; haptic(); toast(`Ты играешь на ${BY[id].name}`); return refresh();
+  }
   const bp = e.target.closest("[data-bpos]");
-  if (bp) { buildPos = +bp.dataset.bpos; haptic(); const y = scrollY; renderResult(); return scrollTo(0, y); }
+  if (bp) { buildPos = +bp.dataset.bpos; haptic(); const y = scrollY, box = $("#resultPage"), by = box.scrollTop; renderResult(); scrollTo(0, y); box.scrollTop = by; return; }
   const row = e.target.closest(".pick");
-  if (row) { selected = +row.dataset.id; buildPos = 0; haptic(); renderResult();
-             document.querySelector(".card").scrollIntoView({block: "start"}); }
+  if (row) { selected = +row.dataset.id; buildPos = 0; haptic(); renderResult(); $(".card").scrollIntoView({block: "start"}); }
 };
 
-// ---------- запуск ----------
-(async () => {
-  seg($("#target"), TARGET, target); seg($("#roleFilter"), ROLE, role); seg($("#pos"), POS, pos); renderSlots();
+// ---------- загрузка ----------
+function ago(t) { const h = Math.round((Date.now() / 1000 - t) / 3600); return h < 1 ? "только что" : h < 48 ? h + " ч назад" : Math.round(h / 24) + " дн назад"; }
+async function load() {
   try {
-    D = await fetch("data.json", {cache: "no-cache"}).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
-  } catch (e) { $("#status").textContent = "Не загрузились данные — проверь интернет"; $("#status").className = "err"; return; }
+    const r = await fetch("data.json", {cache: "no-cache"});
+    if (r.status === 503) { const s = await r.json(); $("#status").textContent = s.error || s.progress + " · первый запуск ~2 мин"; return setTimeout(load, 3000); }
+    if (!r.ok) throw new Error(r.status);
+    D = await r.json();
+  } catch (e) { $("#status").textContent = "Не загрузились данные — проверь интернет"; $("#status").className = "err"; return setTimeout(load, 10000); }
   HEROES = D.heroes.sort((a, b) => a.name.localeCompare(b.name)); for (const h of HEROES) BY[h.id] = h;
-  const h = Math.round((Date.now() / 1000 - D.updated) / 3600);
-  $("#status").innerHTML = `патч ${esc(D.patch)} · ${Math.round(D.matches / 1000)} тыс. матчей<br>обновлено ${h < 1 ? "только что" : h < 48 ? h + " ч назад" : Math.round(h / 24) + " дн назад"}`;
-  renderSlots(); renderGrid(); renderResult();
-})();
+  $("#status").textContent = `патч ${D.patch} · ${Math.round(D.matches / 1000)} тыс. матчей · ${ago(D.updated)}`;
+  refresh();
+}
+if (LOCAL) {  // программа на ПК: сообщаем, что окно открыто, и выключаемся, когда его закрыли
+  setInterval(() => fetch("/api/ping").then(r => r.json()).then(s => { if (D && s.loading) $("#status").textContent = s.progress + " · обновляю данные"; }).catch(() => {}), 5000);
+  addEventListener("pagehide", () => navigator.sendBeacon("/api/bye"));
+}
+renderTarget(); renderDraft(); load();
+if (!matchMedia("(pointer: coarse)").matches) $("#q").focus();
 </script>
 </body>
 </html>

@@ -198,3 +198,11 @@ CORE_ONLY = {
     "Orchid Malevolence", "Shiva's Guard", "Crimson Guard", "Linken's Sphere", "Scythe of Vyse",
     "Gleipnir", "Shadow Blade", "Blink Dagger",
 }
+
+# Ручные правила порядка закупа: (что раньше, что потом, совет). Важнее статистики про-матчей.
+# Добавляй свои строки по образцу.
+ORDER_RULES = {
+    "Legion Commander": [("Blink Dagger", "Blade Mail",
+                          "Сначала Blink Dagger, потом Blade Mail: без Blink не зайти в Duel. "
+                          "Blade Mail раньше — только если на линии совсем тяжело.")],
+}

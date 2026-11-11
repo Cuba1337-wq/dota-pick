@@ -1,6 +1,7 @@
 """Dota Pick — программа для драфта. Без ИИ и ключей: открытые данные OpenDota.
-Контрпики и синергия считаются по свежим пабликам Archon–Legend, сборки — по популярным закупам.
-Запуск: start_app.bat (или python app.py). Окно открывается в Edge без адресной строки."""
+Контрпики и синергия — по свежим пабликам Archon–Legend, сборки — по про-матчам текущего патча.
+Запуск: «Dota Pick.bat» (или python app.py). Окно открывается в Edge без адресной строки.
+Интерфейс общий с Telegram-виджетом: site/index.html, данные отдаются как /data.json."""
 import json
 import os
 import subprocess
@@ -12,7 +13,8 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from bot import API, POS_NAMES, get_json, heroes, item_build, norm, od, team_items
+from bot import API, CONSUMABLES, get_json, heroes, norm, od
+from heroes_data import CORE_ONLY, COUNTER_ITEMS, ORDER_RULES, RAW
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATS_FILE = os.path.join(HERE, "stats.json")
@@ -20,12 +22,27 @@ PORT = 8765
 CDN = "https://cdn.cloudflare.steamstatic.com"
 N = 200  # id героев меньше 200
 CHUNKS = 8  # 8 × 150 тыс. последних матчей ≈ сутки пабликов
-PRIOR = 100  # сглаживание: при малом числе игр тянем к ожидаемому винрейту
+MIN_GAMES = 15  # меньше игр на позиции — сборку не показываем
+# промежуточные предметы: их покупают только по пути к большому, отдельно советовать не нужно
+INTERMEDIATE = {"soul_booster", "lesser_crit", "buckler", "perseverance", "oblivion_staff", "ultimate_orb"}
 
 state = {"stats": None, "loading": False, "progress": "", "error": "", "last_ping": time.time()}
 
 
 # ---------- данные ----------
+
+def explorer(sql):
+    for attempt in range(3):  # OpenDota иногда отвечает ошибкой на ровном месте — пробуем ещё раз
+        try:
+            data = get_json(API + "explorer?" + urllib.parse.urlencode({"sql": sql}), timeout=120)
+            if not data.get("err"):
+                return data.get("rows") or []
+            err = RuntimeError(data["err"])
+        except OSError as e:
+            err = e
+        time.sleep(10)
+    raise err
+
 
 def fetch_stats():
     """Качает свежие ранговые матчи Archon–Legend и считает пары героев."""
@@ -35,13 +52,9 @@ def fetch_stats():
     for i in range(CHUNKS):
         state["progress"] = f"Загружаю матчи: {i}/{CHUNKS}"
         where = f"where match_id < {upper}" if upper else ""
-        sql = (f"select match_id, radiant_win w, radiant_team r, dire_team d from "
-               f"(select * from public_matches {where} order by match_id desc limit 150000) x "
-               f"where avg_rank_tier >= 41 and avg_rank_tier < 56 and lobby_type = 7 and duration > 600")
-        data = get_json(API + "explorer?" + urllib.parse.urlencode({"sql": sql}), timeout=120)
-        if data.get("err"):
-            raise RuntimeError(data["err"])
-        rows = data.get("rows") or []
+        rows = explorer(f"select match_id, radiant_win w, radiant_team r, dire_team d from "
+                        f"(select * from public_matches {where} order by match_id desc limit 150000) x "
+                        f"where avg_rank_tier >= 41 and avg_rank_tier < 56 and lobby_type = 7 and duration > 600")
         if not rows:
             break
         upper = min(r["match_id"] for r in rows)
@@ -66,6 +79,7 @@ def fetch_stats():
 
 # Закупы по позициям: про-матчи текущего патча с логом покупок. Позиция — по линии и фарму в команде:
 # двое с самым низким GPM — саппорты (меньший — 5), остальные по линии (лёгкая 1, мид 2, сложная 3).
+# По каждому предмету: сколько игроков купили (n), медианная секунда покупки (t), сколько купили до старта (s).
 BUILD_SQL = """
 with p as (
   select pm.match_id, pm.player_slot, pm.hero_id, pm.lane_role, pm.purchase_log,
@@ -78,43 +92,36 @@ with p as (
                  when rk = 5 then 1 when rk = 4 then 2 else 3 end pos
   from p where hero_id between {lo} and {hi}
 )
-select hero_id h, pos, case when (e->>'time')::int <= 0 then 0 when (e->>'time')::int < 900 then 1
-            when (e->>'time')::int < 1800 then 2 else 3 end ph,
-       e->>'key' k, count(distinct (match_id, player_slot)) n
+select hero_id h, pos, e->>'key' k, count(distinct (match_id, player_slot)) n,
+       round(percentile_cont(0.5) within group (order by (e->>'time')::int))::int t,
+       count(distinct case when (e->>'time')::int <= 0 then (match_id, player_slot) end) s
 from q, unnest(purchase_log) e
-group by 1, 2, 3, 4 having count(distinct (match_id, player_slot)) >= 2
+group by 1, 2, 3 having count(distinct (match_id, player_slot)) >= 2
 union all
-select hero_id, pos, -1, 'games', count(*) from q group by 1, 2
+select hero_id, pos, 'games', count(*), 0, 0 from q group by 1, 2
 """
-PHASES = ("start_game_items", "early_game_items", "mid_game_items", "late_game_items")
-MIN_GAMES = 15  # меньше игр на позиции — показываем общую сборку героя
-
-
-def explorer(sql):
-    data = get_json(API + "explorer?" + urllib.parse.urlencode({"sql": sql}), timeout=120)
-    if data.get("err"):
-        raise RuntimeError(data["err"])
-    return data.get("rows") or []
+BUILDS_VERSION = 2  # поменялся формат builds.json — старый кэш скачивается заново
 
 
 def fetch_builds():
-    items = od("constants/items")
     patch = explorer("select patch from match_patch order by match_id desc limit 1")[0]["patch"]
     games, pop = {}, {}
-    for i, lo in enumerate(range(1, N, 20)):
-        state["progress"] = f"Загружаю сборки по позициям: {i}/{len(range(1, N, 20))}"
-        for r in explorer(BUILD_SQL.format(patch=patch, lo=lo, hi=lo + 19)):
+    chunks = range(1, N, 10)  # по 10 героев: больше — база OpenDota не успевает
+    for i, lo in enumerate(chunks):
+        state["progress"] = f"Загружаю сборки: {i}/{len(chunks)}"
+        for r in explorer(BUILD_SQL.format(patch=patch, lo=lo, hi=lo + 9)):
             key = f"{r['h']}-{r['pos']}"
-            if r["ph"] == -1:
+            if r["k"] == "games":
                 games[key] = int(r["n"])
-            elif r["k"] in items:
-                pop.setdefault(key, {}).setdefault(PHASES[r["ph"]], {})[str(items[r["k"]]["id"])] = int(r["n"])
-    return {"updated": time.time(), "patch": patch, "games": games, "pop": pop}
+            else:
+                pop.setdefault(key, {})[r["k"]] = [int(r["n"]), int(r["t"]), int(r["s"])]
+    return {"v": BUILDS_VERSION, "updated": time.time(), "patch": patch, "games": games, "pop": pop}
 
 
 DATASETS = (  # (ключ в state, файл, сколько живёт, как скачать, проверка)
     ("stats", STATS_FILE, 86400, lambda: fetch_stats(), lambda d: d["matches"] >= 1000),
-    ("builds", os.path.join(HERE, "builds.json"), 7 * 86400, lambda: fetch_builds(), lambda d: len(d["games"]) >= 100),
+    ("builds", os.path.join(HERE, "builds.json"), 7 * 86400, lambda: fetch_builds(),
+     lambda d: d.get("v") == BUILDS_VERSION and len(d["games"]) >= 100),
 )
 
 
@@ -127,6 +134,8 @@ def load_data():
                 state[key] = json.load(f)
         except (OSError, ValueError):
             pass
+        if state.get(key) and not ok(state[key]):
+            state[key] = None  # кэш старого формата не используем
         if not state.get(key) or time.time() - state[key]["updated"] > ttl:
             stale.append((key, path, fetch, ok))
     if not stale:
@@ -151,87 +160,96 @@ def load_data():
     threading.Thread(target=work, daemon=True).start()
 
 
-def rate(g, w, expected):
-    return (w + PRIOR * expected) / (g + PRIOR)
-
-
-def base_wr(s, h):
-    return rate(s["hg"][h], s["hw"][h], 0.5)
-
-
-def advantage(s, a, b):
-    """Насколько a выигрывает у b чаще, чем ожидается по их общим винрейтам."""
-    exp = min(max(base_wr(s, a) - base_wr(s, b) + 0.5, 0.01), 0.99)
-    return rate(s["vg"][a][b], s["vw"][a][b], exp) - exp
-
-
-def synergy(s, a, b):
-    exp = min(max(base_wr(s, a) + base_wr(s, b) - 0.5, 0.01), 0.99)
-    return rate(s["sg"][a][b], s["sw"][a][b], exp) - exp
-
-
-def evaluate(s, h, enemies, allies):
-    vs = [{"id": e, "adv": advantage(s, h, e), "games": s["vg"][h][e]} for e in enemies]
-    syn = [{"id": a, "adv": synergy(s, h, a), "games": s["sg"][h][a]} for a in allies]
-    meta = base_wr(s, h) - 0.5
-    score = sum(x["adv"] for x in vs) + 0.5 * sum(x["adv"] for x in syn) + 0.5 * meta  # главное — матчапы
-    return {"id": h, "score": score, "meta": meta, "wr": base_wr(s, h), "games": s["hg"][h], "vs": vs, "syn": syn}
-
-
-def suggest(enemies, allies, pos, limit=10):
-    s = state["stats"]
-    by_id, _ = heroes()
-    taken = set(enemies) | set(allies)
-    rows = [evaluate(s, h, enemies, allies) for h in by_id
-            if h not in taken and (not pos or pos in by_id[h]["pos"]) and s["hg"][h] >= 100]
-    rows.sort(key=lambda r: -r["score"])
-    return rows[:limit]
-
-
-def build(hero, enemies, pos):
-    """Сборка на позицию (pos=0 — самая частая позиция героя) + предметы против команды."""
-    by_id, _ = heroes()
+def timed_build(pop, games, hero_name=""):
+    """Сборка по минутам: старт, основные предметы по порядку покупки, предметы по ситуации."""
     items = od("constants/items")
-    img = {it["dname"]: CDN + it["img"] for it in items.values() if it.get("dname") and it.get("img")}
-    b = state.get("builds") or {"games": {}, "pop": {}, "patch": "?"}
-    games = {p: b["games"].get(f"{hero}-{p}", 0) for p in range(1, 6)}
-    if not pos:
-        pos = max(games, key=games.get) if any(games.values()) else min(by_id[hero]["pos"])
-    if games[pos] >= MIN_GAMES:
-        phases = item_build(hero, b["pop"].get(f"{hero}-{pos}", {}))
-        note = f"Закупы на {pos} позиции · {games[pos]} про-матчей патча {b['patch']}"
-    else:
-        phases = item_build(hero)
-        note = f"На {pos} позиции героя почти не играют ({games[pos]} игр) — показана общая сборка"
-    return {
-        "pos": pos, "games": games, "note": note,
-        "phases": [{"title": t, "items": [{"name": n, "img": img.get(n, "")} for n in names]}
-                   for t, names in phases if names],
-        "team": [{"name": n, "img": img.get(n, ""), "why": why} for n, why in team_items(enemies, pos in (4, 5))],
-    }
+    parts = {c for it in items.values() for c in (it.get("components") or [])}
+
+    def usable(k):
+        it = items.get(k, {})
+        return it.get("dname") and not k.startswith("recipe") and k not in CONSUMABLES
+
+    start = sorted((k for k, (n, t, s) in pop.items()  # на старте расходники (Tango и т.п.) нужны
+                    if items.get(k, {}).get("dname") and not k.startswith("recipe") and s >= 0.2 * games),
+                   key=lambda k: -pop[k][2])[:6]
+    # большие предметы: без расходников, без голых компонентов (Mystic Staff), купленные после старта
+    cand = {k: (n / games, t) for k, (n, t, s) in pop.items()
+            if usable(k) and t > 60 and (items[k].get("cost") or 0) >= 400
+            and not (k in parts and not items[k].get("created") and k != "blink")}
+    # Sange не показываем, если популярен Sange and Yasha, в который он собирается
+    inside = {c for k, (share, _) in cand.items() if share >= 0.25 for c in (items[k].get("components") or [])}
+    cand = {k: v for k, v in cand.items() if k not in inside - {"blink", "ultimate_scepter"}}
+    ranked = sorted(cand, key=lambda k: -cand[k][0])
+    core = sorted([k for k in ranked if cand[k][0] >= 0.3][:8], key=lambda k: cand[k][1])
+    # по ситуации — только готовые предметы, без промежуточных (Soul Booster, Crystalys)
+    extra = sorted([k for k in ranked if k not in core and cand[k][0] >= 0.08 and k not in INTERMEDIATE][:6],
+                   key=lambda k: cand[k][1])
+
+    names = [items[k]["dname"] for k in core]
+    minutes = [round(cand[k][1] / 60) for k in core]
+    for first, then, _ in ORDER_RULES.get(hero_name, []):  # ручные правила порядка важнее статистики
+        if first in names and then in names and names.index(first) > names.index(then):
+            k = core.pop(names.index(first))
+            core.insert(names.index(then), k)
+            names = [items[k]["dname"] for k in core]
+    # минуты остаются по возрастанию: это «когда обычно появляется N-й большой предмет»
+    row = lambda k, m: [items[k]["dname"], m, round(cand[k][0] * 100)]
+    return {"start": [items[k]["dname"] for k in start],
+            "core": [row(k, m) for k, m in zip(core, minutes)],
+            "extra": [row(k, round(cand[k][1] / 60)) for k in extra]}
 
 
 def hero_list():
-    from heroes_data import RAW
     aliases = {}
     for line in RAW.strip().splitlines():
         name, _, al = line.split("|")
         aliases[name] = [norm(a) for a in al.split(",")]
+    by_id, _ = heroes()
     out = []
     for h in od("heroStats"):
-        me = heroes()[0][h["id"]]
+        me = by_id[h["id"]]
         out.append({"id": h["id"], "name": me["name"], "img": CDN + h["img"].split("?")[0],
-                    "pos": sorted(me["pos"]), "attr": h["primary_attr"],
+                    "pos": sorted(me["pos"]), "attr": h["primary_attr"], "roles": me["roles"],
                     "aliases": [norm(me["name"]), norm(h["name"].replace("npc_dota_hero_", ""))]
                     + aliases.get(me["name"], [])})
     return sorted(out, key=lambda x: x["name"])
 
 
+def make_data(stats, builds):
+    """Всё, что нужно странице, одним объектом: и для программы на ПК, и для Telegram-виджета."""
+    hero_ls = hero_list()
+    names = {h["id"]: h["name"] for h in hero_ls}
+    m = max(names) + 1  # обрезаем таблицы до реальных id героев
+    ready = {key: timed_build(builds["pop"].get(key, {}), n, names.get(int(key.split("-")[0]), ""))
+             for key, n in builds["games"].items() if n >= MIN_GAMES}
+    used = ({x[0] for b in ready.values() for x in b["core"] + b["extra"]} | {n for b in ready.values() for n in b["start"]}
+            | {n for v in COUNTER_ITEMS.values() for n in v})
+    items = od("constants/items")
+    img = {it["dname"]: CDN + it["img"].split("?")[0] for it in items.values() if it.get("dname") and it.get("img")}
+    return {
+        "updated": stats["updated"], "matches": stats["matches"], "patch": builds["patch"], "min_games": MIN_GAMES,
+        "heroes": hero_ls,
+        "stats": {k: [row[:m] for row in stats[k][:m]] if isinstance(stats[k][0], list) else stats[k][:m]
+                  for k in ("hg", "hw", "vg", "vw", "sg", "sw")},
+        "games": builds["games"], "builds": ready,
+        "items": {n: img.get(n, "") for n in used},
+        "counters": COUNTER_ITEMS, "core_only": sorted(CORE_ONLY),
+        "rules": {hero: [tip for _, _, tip in rules] for hero, rules in ORDER_RULES.items()},
+    }
+
+
+_data_cache = {}
+
+
+def data_json():
+    """make_data для программы на ПК; пересчитывается, только когда обновились данные."""
+    key = (state["stats"]["updated"], state["builds"]["updated"])
+    if _data_cache.get("key") != key:
+        _data_cache.update(key=key, body=json.dumps(make_data(state["stats"], state["builds"]), ensure_ascii=False).encode())
+    return _data_cache["body"]
+
+
 # ---------- сервер ----------
-
-def ids(q, key):
-    return [int(x) for x in (q.get(key, [""])[0] or "").split(",") if x.strip().isdigit()]
-
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -251,37 +269,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, {})
 
     def do_GET(self):
-        url = urllib.parse.urlparse(self.path)
-        q = urllib.parse.parse_qs(url.query)
+        path = urllib.parse.urlparse(self.path).path
         try:
-            if url.path == "/":
-                with open(os.path.join(HERE, "index.html"), "rb") as f:
+            if path == "/":
+                with open(os.path.join(HERE, "site", "index.html"), "rb") as f:
                     return self.send(200, f.read(), "text/html; charset=utf-8")
-            if url.path == "/api/ping":
+            if path == "/api/ping":
                 state["last_ping"] = time.time()
-                s = state["stats"]
-                return self.send(200, {"ready": bool(s), "patch": (state.get("builds") or {}).get("patch", ""), "loading": state["loading"], "progress": state["progress"],
-                                       "error": state["error"], "matches": s["matches"] if s else 0,
-                                       "updated": s["updated"] if s else 0})
-            if url.path == "/api/heroes":
-                return self.send(200, {"heroes": hero_list(), "positions": POS_NAMES})
-            if url.path == "/api/suggest":
-                if not state["stats"]:
-                    return self.send(503, {"error": "Данные ещё загружаются"})
-                enemies, allies, me = ids(q, "enemies"), ids(q, "allies"), ids(q, "me")
-                pos = int(q.get("pos", ["0"])[0] or 0)
-                s = state["stats"]
-                out = {"me": None, "picks": []}
-                if me:
-                    out["me"] = evaluate(s, me[0], enemies, allies)
-                    out["me"]["build"] = build(me[0], enemies, pos)
-                else:
-                    out["picks"] = suggest(enemies, allies, pos)
-                    if out["picks"]:
-                        out["picks"][0]["build"] = build(out["picks"][0]["id"], enemies, pos)
-                return self.send(200, out)
-            if url.path == "/api/build":
-                return self.send(200, build(ids(q, "hero")[0], ids(q, "enemies"), int(q.get("pos", ["0"])[0] or 0)))
+                return self.send(200, {"loading": state["loading"], "progress": state["progress"], "error": state["error"]})
+            if path == "/data.json":
+                if not (state.get("stats") and state.get("builds")):
+                    return self.send(503, {"progress": state["progress"] or "Загружаю данные…", "error": state["error"]})
+                return self.send(200, data_json())
             self.send(404, {"error": "not found"})
         except Exception as e:
             traceback.print_exc()
