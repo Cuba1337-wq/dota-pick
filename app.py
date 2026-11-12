@@ -239,13 +239,31 @@ def make_data(stats, builds):
 
 
 _data_cache = {}
+LAST_DATA = os.path.join(HERE, "site", "data.json")  # последние удачные данные — запасной вариант
+
+
+def last_data():
+    with open(LAST_DATA, "rb") as f:
+        return f.read()
 
 
 def data_json():
-    """make_data для программы на ПК; пересчитывается, только когда обновились данные."""
+    """make_data для программы на ПК; пересчитывается, только когда обновились данные.
+    Не получилось (нет связи с OpenDota) — отдаём последние сохранённые данные, а не ошибку."""
+    if not (state.get("stats") and state.get("builds")):
+        return last_data()  # первый запуск, свои данные ещё качаются
     key = (state["stats"]["updated"], state["builds"]["updated"])
-    if _data_cache.get("key") != key:
-        _data_cache.update(key=key, body=json.dumps(make_data(state["stats"], state["builds"]), ensure_ascii=False).encode())
+    if _data_cache.get("key") != key or time.time() > _data_cache.get("retry", float("inf")):
+        try:
+            body = json.dumps(make_data(state["stats"], state["builds"]), ensure_ascii=False).encode()
+            with open(LAST_DATA + ".tmp", "wb") as f:
+                f.write(body)
+            os.replace(LAST_DATA + ".tmp", LAST_DATA)
+            _data_cache.clear()
+            _data_cache.update(key=key, body=body)
+        except Exception:
+            traceback.print_exc()
+            _data_cache.update(key=key, body=_data_cache.get("body") or last_data(), retry=time.time() + 120)
     return _data_cache["body"]
 
 
@@ -278,9 +296,10 @@ class Handler(BaseHTTPRequestHandler):
                 state["last_ping"] = time.time()
                 return self.send(200, {"loading": state["loading"], "progress": state["progress"], "error": state["error"]})
             if path == "/data.json":
-                if not (state.get("stats") and state.get("builds")):
+                try:
+                    return self.send(200, data_json())
+                except OSError:  # нет ни свежих, ни сохранённых данных — страница подождёт и спросит снова
                     return self.send(503, {"progress": state["progress"] or "Загружаю данные…", "error": state["error"]})
-                return self.send(200, data_json())
             self.send(404, {"error": "not found"})
         except Exception as e:
             traceback.print_exc()

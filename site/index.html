@@ -4,9 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Dota Pick</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0d1016; --card: #151922; --card2: #1c212c; --line: #262c38;
@@ -15,7 +12,7 @@
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); }
-  body { color: var(--text); font: 13px/1.45 Inter, -apple-system, "Segoe UI", system-ui, sans-serif; }
+  body { color: var(--text); font: 13px/1.45 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; }
   button { font: inherit; color: inherit; cursor: pointer; }
   [hidden] { display: none !important; }
 
@@ -157,8 +154,16 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const tg = window.Telegram && Telegram.WebApp && Telegram.WebApp.initData !== undefined ? Telegram.WebApp : null;
-if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor("#0d1016"); tg.setBackgroundColor("#0d1016"); } catch (e) {} }
+// Скрипт Телеграма грузится в фоне (тег в конце страницы) и вызывает initTg; вне Телеграма tg так и остаётся null.
+let tg = null;
+function initTg() {
+  const w = window.Telegram && Telegram.WebApp;
+  if (!w || !w.initData) return;
+  tg = w; tg.ready(); tg.expand();
+  try { tg.setHeaderColor("#0d1016"); tg.setBackgroundColor("#0d1016"); } catch (e) {}
+  tg.MainButton.onClick(() => setTab("result"));
+  renderDraft();
+}
 const haptic = () => { try { tg && tg.HapticFeedback.selectionChanged(); } catch (e) {} };
 const LOCAL = location.hostname === "127.0.0.1";  // программа на ПК (а не сайт для Телеграма)
 
@@ -337,7 +342,6 @@ function setTab(t) {
   renderDraft(); renderResult(); window.scrollTo(0, 0);
 }
 $("#tabs").onclick = e => { const b = e.target.closest("button"); if (b) setTab(b.dataset.t); };
-if (tg) tg.MainButton.onClick(() => setTab("result"));
 
 // ---------- результат ----------
 const img = n => D.items[n] || "";
@@ -400,23 +404,39 @@ $("#result").onclick = e => {
 
 // ---------- загрузка ----------
 function ago(t) { const h = Math.round((Date.now() / 1000 - t) / 3600); return h < 1 ? "только что" : h < 48 ? h + " ч назад" : Math.round(h / 24) + " дн назад"; }
+// Последние данные храним на устройстве: нет связи (упал сервер, плохой интернет) — работаем на них.
+const SAVED = "dota-pick-data";
+function showStatus(note, err) {
+  $("#status").className = err ? "err" : "";
+  $("#status").textContent = `патч ${D.patch} · ${Math.round(D.matches / 1000)} тыс. матчей · ${ago(D.updated)}` + (note || "");
+}
+function use(data, note) {
+  D = data; HEROES = D.heroes.sort((a, b) => a.name.localeCompare(b.name)); for (const h of HEROES) BY[h.id] = h;
+  showStatus(note); refresh();
+}
 async function load() {
   try {
     const r = await fetch("data.json", {cache: "no-cache"});
-    if (r.status === 503) { const s = await r.json(); $("#status").textContent = s.error || s.progress + " · первый запуск ~2 мин"; return setTimeout(load, 3000); }
+    if (r.status === 503 && !D) { const s = await r.json(); $("#status").textContent = s.error || s.progress + " · первый запуск ~2 мин"; return setTimeout(load, 3000); }
     if (!r.ok) throw new Error(r.status);
-    D = await r.json();
-  } catch (e) { $("#status").textContent = "Не загрузились данные — проверь интернет"; $("#status").className = "err"; return setTimeout(load, 10000); }
-  HEROES = D.heroes.sort((a, b) => a.name.localeCompare(b.name)); for (const h of HEROES) BY[h.id] = h;
-  $("#status").textContent = `патч ${D.patch} · ${Math.round(D.matches / 1000)} тыс. матчей · ${ago(D.updated)}`;
-  refresh();
+    const text = await r.text();
+    use(JSON.parse(text));
+    try { localStorage.setItem(SAVED, text); } catch (e) {}
+  } catch (e) {
+    if (D) showStatus(" · нет связи, работаю на сохранённых данных", true);  // сохранённые уже показаны при запуске
+    else { $("#status").textContent = "Нет связи с сервером — пробую снова…"; $("#status").className = "err"; }
+    setTimeout(load, 15000);
+  }
 }
 if (LOCAL) {  // программа на ПК: сообщаем, что окно открыто, и выключаемся, когда его закрыли
   setInterval(() => fetch("/api/ping").then(r => r.json()).then(s => { if (D && s.loading) $("#status").textContent = s.progress + " · обновляю данные"; }).catch(() => {}), 5000);
   addEventListener("pagehide", () => navigator.sendBeacon("/api/bye"));
 }
-renderTarget(); renderDraft(); load();
+renderTarget(); renderDraft();
+try { const saved = JSON.parse(localStorage.getItem(SAVED)); if (saved) use(saved, " · обновляю…"); } catch (e) {}  // сразу показываем прошлые данные
+load();
 if (!matchMedia("(pointer: coarse)").matches) $("#q").focus();
 </script>
+<script async src="https://telegram.org/js/telegram-web-app.js" onload="initTg()"></script>
 </body>
 </html>

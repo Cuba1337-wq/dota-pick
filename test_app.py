@@ -47,3 +47,21 @@ pudge5 = d["builds"]["14-5"]
 assert pudge5["core"] and all(n in d["items"] for n, _, _ in pudge5["core"] + pudge5["extra"])
 assert "Legion Commander" in d["rules"]
 print("OK")
+
+# OpenDota не отвечает (как ночью 12.11) — программа на ПК всё равно открывается
+import bot
+real_get = bot.get_json
+def down(*a, **k):
+    raise TimeoutError("The read operation timed out")
+bot.get_json = down
+bot._cache.clear()
+assert bot.od("heroStats"), "справочник героев должен браться с диска"
+app._data_cache.clear()
+assert json.loads(app.data_json())["heroes"], "данные собираются из сохранённого"
+real_make = app.make_data
+app.make_data = lambda *a: (_ for _ in ()).throw(TimeoutError("нет связи"))
+app._data_cache.clear()
+assert app.data_json() == app.last_data(), "собрать не вышло — отдаём последние сохранённые данные"
+app.make_data, bot.get_json = real_make, real_get
+bot._cache.clear()
+print("OK offline")

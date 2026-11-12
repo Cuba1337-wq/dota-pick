@@ -26,12 +26,25 @@ def get_json(url, data=None, timeout=30):
 
 
 def od(path):
-    """Запрос к OpenDota с кэшем на сутки."""
+    """Запрос к OpenDota с кэшем на сутки. Ответ сохраняется на диск: если OpenDota
+    не отвечает, берём сохранённый — программа не должна падать из-за чужого сервера."""
     hit = _cache.get(path)
     if hit and time.time() - hit[0] < 86400:
         return hit[1]
-    data = get_json(API + path)
-    _cache[path] = (time.time(), data)
+    saved = os.path.join(HERE, "od_cache", path.replace("/", "_") + ".json")
+    try:
+        data = get_json(API + path, timeout=60)
+        os.makedirs(os.path.dirname(saved), exist_ok=True)
+        with open(saved + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(saved + ".tmp", saved)
+        _cache[path] = (time.time(), data)
+    except (OSError, ValueError):
+        if not os.path.exists(saved):
+            raise
+        with open(saved, encoding="utf-8") as f:
+            data = json.load(f)
+        _cache[path] = (time.time() - 86400 + 300, data)  # через 5 минут попробуем OpenDota снова
     return data
 
 

@@ -8,3 +8,4 @@ __pycache__/
 .claude/
 token.txt
 pool.json
+od_cache/
