@@ -4,6 +4,7 @@
 Интерфейс общий с Telegram-виджетом: site/index.html, данные отдаются как /data.json."""
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -118,8 +119,61 @@ def fetch_builds():
     return {"v": BUILDS_VERSION, "updated": time.time(), "patch": patch, "games": games, "pop": pop}
 
 
+SKILLS_SQL = """
+with recent as (
+ select match_id from match_patch where patch = '{patch}'
+ order by match_id desc limit 2500
+), players as (
+ select pm.match_id, hero_id, player_slot < 128 radiant, lane_role, ability_upgrades_arr,
+ row_number() over (partition by pm.match_id, player_slot < 128 order by gold_per_min nulls last, player_slot) rk,
+ array_agg(hero_id) over (partition by pm.match_id, player_slot < 128) allies
+ from recent join player_matches pm using(match_id)
+), ranked as (
+ select *, case when rk = 1 then 5 when rk = 2 then 4
+ when lane_role between 1 and 3 then lane_role when rk = 5 then 1 when rk = 4 then 2 else 3 end pos
+ from players where cardinality(ability_upgrades_arr) >= 8
+), sample as (
+ select *, row_number() over (partition by hero_id, pos order by match_id desc) recency from ranked
+), teams as (
+ select distinct match_id, radiant, allies from players
+)
+select s.hero_id h, s.pos, s.ability_upgrades_arr a, e.allies enemies from sample s
+join teams e on e.match_id = s.match_id and e.radiant <> s.radiant
+where recency <= 40
+"""
+
+
+def fetch_skills(patch=None):
+    patch = patch or explorer("select patch from match_patch order by match_id desc limit 1")[0]["patch"]
+    ability_ids = od("constants/ability_ids")
+    abilities = od("constants/abilities")
+    trees = od("constants/hero_abilities")
+    tiers = {talent["name"]: 5 + 5 * talent["level"]
+             for tree in trees.values() for talent in tree["talents"]}
+    matches, labels = {}, {}
+    for row in explorer(SKILLS_SQL.format(patch=patch)):
+        if not row["enemies"] or len(row["enemies"]) != 5:
+            continue
+        sequence = row["a"]
+        for ability_id in sequence:
+            key = ability_ids.get(str(ability_id), "")
+            name = abilities.get(key, {}).get("dname")
+            if name:
+                name = re.sub(r"[+−-]?\{s:[^}]+\}[%s]?\s*", "", name).strip()
+                if name:
+                    labels[ability_id] = [name, tiers.get(key, 0)]
+            elif key == "special_bonus_attributes":
+                labels[ability_id] = ["Атрибуты", 0]
+        if all(ability_id in labels for ability_id in sequence):
+            matches.setdefault(f"{row['h']}-{row['pos']}", []).append([sequence, row["enemies"]])
+    if not matches:
+        raise RuntimeError("OpenDota не вернула прокачку")
+    return {"updated": time.time(), "patch": patch, "matches": matches, "labels": labels}
+
+
 DATASETS = (  # (ключ в state, файл, сколько живёт, как скачать, проверка)
     ("stats", STATS_FILE, 86400, lambda: fetch_stats(), lambda d: d["matches"] >= 1000),
+    ("skills", os.path.join(HERE, "skills.json"), 86400, lambda: fetch_skills(), lambda d: bool(d.get("matches"))),
     ("builds", os.path.join(HERE, "builds.json"), 7 * 86400, lambda: fetch_builds(),
      lambda d: d.get("v") == BUILDS_VERSION and len(d["games"]) >= 100),
 )
@@ -215,7 +269,7 @@ def hero_list():
     return sorted(out, key=lambda x: x["name"])
 
 
-def make_data(stats, builds):
+def make_data(stats, builds, skills=None):
     """Всё, что нужно странице, одним объектом: и для программы на ПК, и для Telegram-виджета."""
     hero_ls = hero_list()
     names = {h["id"]: h["name"] for h in hero_ls}
@@ -232,6 +286,7 @@ def make_data(stats, builds):
         "stats": {k: [row[:m] for row in stats[k][:m]] if isinstance(stats[k][0], list) else stats[k][:m]
                   for k in ("hg", "hw", "vg", "vw", "sg", "sw")},
         "games": builds["games"], "builds": ready,
+        "skills": skills,
         "items": {n: img.get(n, "") for n in used},
         "counters": COUNTER_ITEMS, "core_only": sorted(CORE_ONLY),
         "rules": {hero: [tip for _, _, tip in rules] for hero, rules in ORDER_RULES.items()},
@@ -252,10 +307,13 @@ def data_json():
     Не получилось (нет связи с OpenDota) — отдаём последние сохранённые данные, а не ошибку."""
     if not (state.get("stats") and state.get("builds")):
         return last_data()  # первый запуск, свои данные ещё качаются
-    key = (state["stats"]["updated"], state["builds"]["updated"])
+    skills = state.get("skills")
+    key = (state["stats"]["updated"], state["builds"]["updated"], (skills or {}).get("updated"))
     if _data_cache.get("key") != key or time.time() > _data_cache.get("retry", float("inf")):
         try:
-            body = json.dumps(make_data(state["stats"], state["builds"]), ensure_ascii=False).encode()
+            if not skills and os.path.isfile(LAST_DATA):
+                skills = json.loads(last_data()).get("skills")
+            body = json.dumps(make_data(state["stats"], state["builds"], skills), ensure_ascii=False).encode()
             with open(LAST_DATA + ".tmp", "wb") as f:
                 f.write(body)
             os.replace(LAST_DATA + ".tmp", LAST_DATA)

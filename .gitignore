@@ -9,3 +9,5 @@ __pycache__/
 token.txt
 pool.json
 od_cache/
+
+skills.json

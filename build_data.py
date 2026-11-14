@@ -21,7 +21,15 @@ def main(use_cache, fallback=False):
         else:
             stats, builds = app.fetch_stats(), app.fetch_builds()
         assert stats and builds and stats["matches"] >= 1000 and len(builds["games"]) >= 100, "мало данных или кэш устарел"
-        data = app.make_data(stats, builds)
+        try:
+            skills = app.state.get("skills") if use_cache else app.fetch_skills(builds["patch"])
+        except (OSError, RuntimeError):
+            traceback.print_exc()
+            skills = None
+        if not skills and os.path.exists(OUT):
+            with open(OUT, encoding="utf-8") as f:
+                skills = json.load(f).get("skills")
+        data = app.make_data(stats, builds, skills)
     except Exception:
         # GitHub: если OpenDota не ответила, публикуем сайт с прошлыми данными из репозитория,
         # а текст ошибки кладём рядом — его видно по ссылке без входа в GitHub
